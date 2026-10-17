@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste de Transcrição de Voz - Ghost Studio v2.3.0</title>
+  <script src="voice-transcribe.user.js?v=2.3.0"></script>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
+      --accent: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    label span.tag {
+      font-size: 11px;
+      font-weight: normal;
+      background: #1f2937;
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #38bdf8;
+    }
+
+    input[type="text"], textarea {
+      width: 100%;
+      background: #030712;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #ffffff;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus, textarea:focus, .editable-box:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .editable-box {
+      width: 100%;
+      min-height: 110px;
+      background: #030712;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #ffffff;
+      font-size: 15px;
+      outline: none;
+      line-height: 1.5;
+    }
+
+    .instructions {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #d1fae5;
+    }
+
+    .instructions ol {
+      margin-left: 20px;
+      margin-top: 6px;
+    }
+
+    kbd {
+      background: #1f2937;
+      border: 1px solid #374151;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #f3f4f6;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>🎙️ Bancada de Teste - Transcrição de Voz</h1>
+      <p class="subtitle">Teste em tempo real para campos padrão e editores ricos (contenteditable)</p>
+    </header>
+
+    <div class="instructions">
+      <strong>Como testar com o Tampermonkey:</strong>
+      <ol>
+        <li>Certifique-se de que o script está ativo no Tampermonkey nesta página.</li>
+        <li>Clique em qualquer campo abaixo para posicionar o cursor.</li>
+        <li>Pressione <kbd>Alt + V</kbd> ou clique no ícone do microfone flutuante no canto inferior direito.</li>
+        <li>Comece a falar. Exemplo: <em>"Olá mundo vírgula este é um teste em tempo real ponto final"</em>.</li>
+        <li>Clique no botão de engrenagem no HUD para ajustar comandos de pontuação e atalho.</li>
+      </ol>
+    </div>
+
+    <!-- Barra de Teste Rápido Interativo -->
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: -8px;">
+      <button type="button" id="btn-action-ghost" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.toggleGhost()">
+        📝 Abrir / Fechar Ghost Studio
+      </button>
+      <button type="button" id="btn-action-sim" style="background: #1e293b; color: #34d399; border: 1px solid #334155; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.simulateSpeech('olá mundo vírgula este é o teste interativo do Ghost Studio ponto final')">
+        🗣️ Simular Fala Normal
+      </button>
+      <button type="button" id="btn-action-sim-template" style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid #6366f1; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.simulateSpeech('saudação formal hoje é data de hoje às inserir hora ponto final link da página')">
+        ⚡ Simular Fala Dynamic Template
+      </button>
+      <button type="button" id="btn-action-dict" style="background: #1e293b; color: #fbbf24; border: 1px solid #334155; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.openDictionary()">
+        📖 Dicionário & Pontuações
+      </button>
+      <button type="button" id="btn-action-settings" style="background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.openSettings()">
+        ⚙️ Configurações Gerais
+      </button>
+    </div>
+
+    <!-- Campo 1: Input de Linha Única -->
+    <div class="card">
+      <label for="sample-input">
+        Campo Padrão de Linha Única
+        <span class="tag">&lt;input type="text"&gt;</span>
+      </label>
+      <input type="text" id="sample-input" placeholder="Clique aqui e fale..." autocomplete="off">
+    </div>
+
+    <!-- Campo 2: Textarea Multilinha -->
+    <div class="card">
+      <label for="sample-textarea">
+        Área de Texto Multilinha
+        <span class="tag">&lt;textarea&gt;</span>
+      </label>
+      <textarea id="sample-textarea" placeholder="Experimente falar comandos como 'vírgula', 'ponto final' ou 'pular linha'..."></textarea>
+    </div>
+
+    <!-- Campo 3: Rich Text Editor / Contenteditable (estilo WhatsApp / ChatGPT / Notion) -->
+    <div class="card">
+      <label>
+        Editor Rico / ContentEditable
+        <span class="tag">contenteditable="true"</span>
+      </label>
+      <div class="editable-box" contenteditable="true" role="textbox" aria-multiline="true" placeholder="Digite ou fale aqui..."></div>
+    </div>
+  </div>
+
+</body>
+</html>
