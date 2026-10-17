@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Echo - Live Speech to Text (Ghost Studio)
 // @namespace    https://github.com/MiiuGR4U/Echo
-// @version      2.3.0
-// @description  Transcreve áudio com Ghost Dock, VAD adaptativo anti-cortes, Watchdog auto-recuperador, Dynamic Templates (Text Blaze para voz), desduplicação e 100% configurável.
+// @version      2.4.0
+// @description  Transcreve áudio com Ghost Dock, VAD adaptativo anti-cortes, Watchdog auto-recuperador, Dynamic Templates (Text Blaze para voz com {cursor}), desduplicação e 100% configurável.
 // @author       MiiuGR4U
 // @match        *://*/*
 // @grant        GM_setValue
@@ -108,6 +108,9 @@
 
     // Comandos de voz falados (substituições dinâmicas com toggle individual e Text Blaze templates)
     commands: [
+      // Exemplo prático Text Blaze com seletor de cursor {cursor}
+      { spoken: 'palavra trabalhando', replace: 'Olá "{cursor}" estamos trabalhando nesse processo!', enabled: true },
+
       // Pontuações
       { spoken: 'vírgula', replace: ', ', enabled: true },
       { spoken: 'ponto final', replace: '. ', enabled: true },
@@ -204,6 +207,9 @@
     sliceStartTime: 0,
     ghostText: '',
     lastCommittedChunk: '',
+    lastRawChunk: '',
+    lastRawChunkTime: 0,
+    recentRawHistory: [],
     isGhostOpen: false,
     recognition: null,
     feedbackTimeout: null,
@@ -352,9 +358,9 @@
       return ''; // Completamente duplicado, descarta
     }
 
-    // 2. Se a frase nova está contida nos últimos 25 vocábulos do texto existente
-    const recentWindow = cleanExisting.slice(-Math.min(30, cleanExisting.length)).join(' ');
-    if (recentWindow.endsWith(newFull)) {
+    // 2. Se a frase nova já está contida ou finaliza os últimos 35 vocábulos do texto existente
+    const recentWindow = cleanExisting.slice(-Math.min(35, cleanExisting.length)).join(' ');
+    if (recentWindow.endsWith(newFull) || recentWindow.includes(newFull)) {
       return '';
     }
 
@@ -505,9 +511,31 @@
   // 5. GHOST STUDIO: BUFFER DE PRÉVIA, EDIÇÃO & ENVIO INTERATIVO
   // =========================================================================
   function handleTranscribedChunk(rawChunk) {
+    if (state.manualStop || !state.isListening) return;
     if (!rawChunk || !rawChunk.trim()) return;
 
-    // Remove repetição verificando contra o texto acumulado no Ghost Studio
+    // 1. Supressão instantânea de fatia idêntica repetida em curto intervalo (< 3500ms)
+    const normalizedRaw = rawChunk.trim().toLowerCase().replace(/[.,!?:;"]/g, '').replace(/\s+/g, ' ');
+    const now = Date.now();
+    if (state.lastRawChunk === normalizedRaw && (now - (state.lastRawChunkTime || 0)) < 3500) {
+      console.log('[Echo] Supressão instantânea de fatia repetida em <3.5s:', normalizedRaw);
+      return;
+    }
+    state.lastRawChunk = normalizedRaw;
+    state.lastRawChunkTime = now;
+
+    // 2. Supressão contra histórico de vocábulos recentes para evitar eco do Whisper
+    if (!state.recentRawHistory) state.recentRawHistory = [];
+    state.recentRawHistory = state.recentRawHistory.filter((item) => (now - item.time) < 6000);
+    const recentWordsStr = state.recentRawHistory.map((item) => item.word).join(' ');
+    const newWords = normalizedRaw.split(/\s+/).filter(Boolean);
+    if (newWords.length > 0 && recentWordsStr.includes(normalizedRaw)) {
+      console.log('[Echo] Supressão por histórico recente de fatias:', normalizedRaw);
+      return;
+    }
+    newWords.forEach((w) => state.recentRawHistory.push({ word: w, time: now }));
+
+    // 3. Remove repetição verificando contra o texto acumulado no Ghost Studio
     const baseText = state.ghostText || state.lastCommittedChunk || '';
     const deduplicated = deduplicateOverlap(baseText, rawChunk);
     if (!deduplicated || !deduplicated.trim()) return;
@@ -529,10 +557,23 @@
   }
 
   function appendGhostText(text) {
-    state.ghostText = (state.ghostText || '') + text;
+    const cursorMarker = '{cursor}';
+    const hasCursor = text.includes(cursorMarker);
+    const cursorOffset = hasCursor ? text.indexOf(cursorMarker) : -1;
+    const cleanText = hasCursor ? text.split(cursorMarker).join('') : text;
+
+    const prevLength = (state.ghostText || '').length;
+    state.ghostText = (state.ghostText || '') + cleanText;
+
     if (hudElements.ghostInput) {
       hudElements.ghostInput.value = state.ghostText;
-      hudElements.ghostInput.scrollTop = hudElements.ghostInput.scrollHeight;
+      if (hasCursor) {
+        hudElements.ghostInput.focus();
+        const caretPos = prevLength + cursorOffset;
+        hudElements.ghostInput.selectionStart = hudElements.ghostInput.selectionEnd = caretPos;
+      } else {
+        hudElements.ghostInput.scrollTop = hudElements.ghostInput.scrollHeight;
+      }
     }
     updateGhostCounters();
 
@@ -556,7 +597,7 @@
     const target = resolveActiveTarget();
     if (!target) {
       // Se não há campo selecionado na página, copia para a área de transferência como fallback
-      navigator.clipboard.writeText(textToInsert).then(() => {
+      navigator.clipboard.writeText(textToInsert.replace(/\{cursor\}/g, '')).then(() => {
         flashFeedback(msg('noTargetCopiedFallback'), false);
         playBeep(880, 80, 'triangle');
       }).catch(() => {
@@ -565,7 +606,8 @@
       return;
     }
 
-    injectIntoPageElement(target, textToInsert);
+    const ghostCaretPos = hudElements.ghostInput ? hudElements.ghostInput.selectionStart : null;
+    injectIntoPageElement(target, textToInsert, ghostCaretPos);
     flashFeedback(msg('feedbackInserted'), false);
     playBeep(660, 60, 'sine');
 
@@ -625,9 +667,18 @@
     }, 2800);
   }
 
-  function injectIntoPageElement(target, text) {
+  function injectIntoPageElement(target, text, explicitCaretOffset = null) {
     if (document.activeElement !== target) {
       try { target.focus(); } catch (e) {}
+    }
+
+    const cursorMarker = '{cursor}';
+    let cleanText = text;
+    let targetCaretOffset = explicitCaretOffset;
+
+    if (text.includes(cursorMarker)) {
+      targetCaretOffset = text.indexOf(cursorMarker);
+      cleanText = text.split(cursorMarker).join('');
     }
 
     const isContentEditable = target.isContentEditable ||
@@ -644,27 +695,32 @@
         sel.removeAllRanges();
         sel.addRange(range);
       }
-      let inserted = false;
+
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode(cleanText);
+      range.insertNode(textNode);
+
+      // Posiciona o seletor de texto exatamente onde o cursor deve ficar
+      const caretIndex = (typeof targetCaretOffset === 'number' && targetCaretOffset >= 0)
+        ? Math.min(targetCaretOffset, cleanText.length)
+        : cleanText.length;
+
+      const newRange = document.createRange();
       try {
-        inserted = document.execCommand('insertText', false, text);
-      } catch (e) {}
-      if (!inserted) {
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        const textNode = document.createTextNode(text);
-        range.insertNode(textNode);
-        range.setStartAfter(textNode);
-        range.collapse(true);
+        newRange.setStart(textNode, caretIndex);
+        newRange.collapse(true);
         sel.removeAllRanges();
-        sel.addRange(range);
-      }
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+        sel.addRange(newRange);
+      } catch (err) {}
+
+      target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: cleanText }));
     } else {
       const val = target.value || '';
       const pos = target.selectionStart !== null ? target.selectionStart : val.length;
       const before = val.slice(0, pos);
       const after = val.slice(pos);
-      const newVal = before + text + after;
+      const newVal = before + cleanText + after;
 
       const proto = target.tagName.toLowerCase() === 'textarea' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
       const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -675,10 +731,13 @@
         target.value = newVal;
       }
 
-      const newCursor = pos + text.length;
-      target.selectionStart = target.selectionEnd = newCursor;
+      const caretIndex = (typeof targetCaretOffset === 'number' && targetCaretOffset >= 0)
+        ? (pos + Math.min(targetCaretOffset, cleanText.length))
+        : (pos + cleanText.length);
 
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+      target.selectionStart = target.selectionEnd = caretIndex;
+
+      target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: cleanText }));
       target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     }
   }
@@ -809,6 +868,12 @@
       };
 
       recorder.onstop = () => {
+        if (state.manualStop || !state.isListening) {
+          state.audioChunks = [];
+          state.hasSpeechInSlice = false;
+          return;
+        }
+
         const chunks = state.audioChunks;
         const hadSpeech = state.hasSpeechInSlice;
         const sliceDuration = Date.now() - state.sliceStartTime;
@@ -915,27 +980,64 @@
     state.manualStop = true;
     state.isListening = false;
     clearInterval(state.vadInterval);
+    state.vadInterval = null;
     stopAudioWatchdog();
+
+    // 1. Descarta filas e buffers pendentes para que nada seja transcrito após desligar
+    state.whisperQueue = [];
+    state.audioChunks = [];
+    state.hasSpeechInSlice = false;
+
+    // 2. Para e fecha o MediaRecorder imediatamente
+    if (state.mediaRecorder) {
+      try {
+        if (state.mediaRecorder.state !== 'inactive') {
+          state.mediaRecorder.stop();
+        }
+      } catch (e) {}
+      state.mediaRecorder = null;
+    }
+
+    // 3. Libera e desliga fisicamente o microfone (apaga luz/indicador vermelho do navegador e OS)
+    if (state.audioStream) {
+      try {
+        state.audioStream.getTracks().forEach((track) => {
+          try { track.stop(); } catch (err) {}
+        });
+      } catch (e) {}
+      state.audioStream = null;
+    }
+
+    // 4. Desconecta o analisador e suspende o AudioContext
+    if (state.analyser) {
+      try { state.analyser.disconnect(); } catch (e) {}
+      state.analyser = null;
+    }
+    if (state.audioCtx && state.audioCtx.state !== 'closed') {
+      try { state.audioCtx.suspend(); } catch (e) {}
+    }
 
     if (hudElements.waveBars) {
       hudElements.waveBars.forEach((b) => (b.style.height = '4px'));
     }
 
-    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-      try { state.mediaRecorder.stop(); } catch (e) {}
-    }
-
     playBeep(440, 50, 'sine');
-    updateHudState('idle');
+    updateHudState('idle', msg('statusReady'));
   }
 
   // Fila sequencial estrita para evitar respostas de áudio fora de ordem
   function queueWhisperAudio(blob) {
+    if (state.manualStop || !state.isListening) return;
     state.whisperQueue.push(blob);
     processNextWhisperAudio();
   }
 
   async function processNextWhisperAudio() {
+    if (state.manualStop || !state.isListening) {
+      state.whisperQueue = [];
+      state.isWhisperProcessing = false;
+      return;
+    }
     if (state.isWhisperProcessing || state.whisperQueue.length === 0) return;
     state.isWhisperProcessing = true;
     const blob = state.whisperQueue.shift();
@@ -945,13 +1047,15 @@
       console.warn('[VoiceSTT] Whisper error:', e);
     } finally {
       state.isWhisperProcessing = false;
-      if (state.whisperQueue.length > 0) {
+      if (state.isListening && !state.manualStop && state.whisperQueue.length > 0) {
         processNextWhisperAudio();
       }
     }
   }
 
   async function sendToWhisperApi(blob) {
+    if (state.manualStop || !state.isListening) return;
+
     const apiKey = (state.config.groqApiKey || '').trim();
     if (!apiKey) {
       updateHudState('error', 'Sem Chave Groq');
@@ -963,10 +1067,10 @@
     formData.append('model', state.config.whisperModel || 'whisper-large-v3-turbo');
     formData.append('language', 'pt');
     formData.append('response_format', 'json');
+    formData.append('temperature', '0.0');
 
-    if (!state.config.aiPunctuation) {
-      formData.append('prompt', 'transcricao direta sem pontuacao');
-    }
+    // Nota de Engenharia: Não passar prompt estático como 'transcricao direta sem pontuacao'
+    // pois o Groq Whisper usa o prompt como contexto prévio e gera eco/repetição involuntária de palavras.
 
     if (hudElements.statusText && state.isListening) {
       hudElements.statusText.textContent = msg('statusTranscribing');
@@ -974,6 +1078,12 @@
 
     return new Promise((resolve) => {
       const handleResponse = (text) => {
+        // Se desativou enquanto a requisição HTTP estava voando, DESCARTA IMEDIATAMENTE
+        if (state.manualStop || !state.isListening) {
+          resolve();
+          return;
+        }
+
         try {
           const data = JSON.parse(text);
           if (data && data.text) {
@@ -1037,6 +1147,7 @@
     };
 
     recognizer.onresult = (event) => {
+      if (state.manualStop || !state.isListening) return;
       let finalChunk = '';
       for (let i = Math.max(event.resultIndex, lastProcessedResultIndex + 1); i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
@@ -1069,7 +1180,7 @@
       } else {
         state.isListening = false;
         playBeep(440, 50, 'sine');
-        updateHudState('idle');
+        updateHudState('idle', msg('statusReady'));
       }
     };
 
@@ -1108,10 +1219,22 @@
     if (state.config.engine === 'whisper') {
       stopWhisperContinuous();
     } else if (state.recognition) {
-      try { state.recognition.stop(); } catch (e) {}
+      try {
+        state.recognition.abort(); // Interrompe imediatamente sem emitir novos onresult
+      } catch (e) {
+        try { state.recognition.stop(); } catch (err) {}
+      }
+      if (state.audioStream) {
+        try {
+          state.audioStream.getTracks().forEach((track) => {
+            try { track.stop(); } catch (err) {}
+          });
+        } catch (e) {}
+        state.audioStream = null;
+      }
     }
 
-    updateHudState('idle');
+    updateHudState('idle', msg('statusReady'));
   }
 
   function toggleListening() {
@@ -2971,5 +3094,5 @@
     resetConfig: () => resetToDefaults()
   };
 
-  console.log(`[Echo] Ghost Studio v2.3.0 ativo. Modo: ${state.config.outputMode}`);
+  console.log(`[Echo] Ghost Studio v2.4.0 ativo. Modo: ${state.config.outputMode}`);
 })();

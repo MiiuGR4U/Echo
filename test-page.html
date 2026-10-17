@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Teste de Transcrição de Voz - Ghost Studio v2.3.0</title>
-  <script src="voice-transcribe.user.js?v=2.3.0"></script>
+  <title>Teste de Transcrição de Voz - Ghost Studio v2.4.0</title>
+  <script src="voice-transcribe.user.js?v=2.4.0"></script>
   <style>
     :root {
       --bg: #090d16;
@@ -172,6 +172,9 @@
       </button>
       <button type="button" id="btn-action-sim" style="background: #1e293b; color: #34d399; border: 1px solid #334155; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.simulateSpeech('olá mundo vírgula este é o teste interativo do Ghost Studio ponto final')">
         🗣️ Simular Fala Normal
+      </button>
+      <button type="button" id="btn-action-sim-cursor" style="background: rgba(244, 63, 94, 0.2); color: #fda4af; border: 1px solid #f43f5e; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="const t = document.getElementById('sample-input'); if (t) t.focus(); window.VoiceSTT && window.VoiceSTT.simulateSpeech('palavra trabalhando')">
+        🎯 Simular "palavra trabalhando" ({cursor})
       </button>
       <button type="button" id="btn-action-sim-template" style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid #6366f1; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;" onclick="window.VoiceSTT && window.VoiceSTT.simulateSpeech('saudação formal hoje é data de hoje às inserir hora ponto final link da página')">
         ⚡ Simular Fala Dynamic Template
