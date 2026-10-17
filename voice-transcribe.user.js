@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Echo - Live Speech to Text (Ghost Studio)
 // @namespace    https://github.com/MiiuGR4U/Echo
-// @version      2.4.0
-// @description  Transcreve áudio com Ghost Dock, VAD adaptativo anti-cortes, Watchdog auto-recuperador, Dynamic Templates (Text Blaze para voz com {cursor}), desduplicação e 100% configurável.
+// @version      2.4.1
+// @description  Transcreve áudio com Ghost Dock, VAD adaptativo anti-cortes, Watchdog auto-recuperador, Dynamic Templates (Text Blaze para voz com {cursor}), quebras de linha e 100% configurável.
 // @author       MiiuGR4U
 // @match        *://*/*
 // @grant        GM_setValue
@@ -111,33 +111,55 @@
       // Exemplo prático Text Blaze com seletor de cursor {cursor}
       { spoken: 'palavra trabalhando', replace: 'Olá "{cursor}" estamos trabalhando nesse processo!', enabled: true },
 
+      // Quebras de Linha e Parágrafos (Variações com e sem acento)
+      { spoken: 'novo parágrafo', replace: '\n\n', enabled: true },
+      { spoken: 'novo paragrafo', replace: '\n\n', enabled: true },
+      { spoken: 'parágrafo', replace: '\n\n', enabled: true },
+      { spoken: 'paragrafo', replace: '\n\n', enabled: true },
+      { spoken: 'pular linha', replace: '\n', enabled: true },
+      { spoken: 'pula linha', replace: '\n', enabled: true },
+      { spoken: 'pule a linha', replace: '\n', enabled: true },
+      { spoken: 'pular a linha', replace: '\n', enabled: true },
+      { spoken: 'nova linha', replace: '\n', enabled: true },
+      { spoken: 'quebra de linha', replace: '\n', enabled: true },
+      { spoken: 'quebrar linha', replace: '\n', enabled: true },
+
       // Pontuações
       { spoken: 'vírgula', replace: ', ', enabled: true },
+      { spoken: 'virgula', replace: ', ', enabled: true },
       { spoken: 'ponto final', replace: '. ', enabled: true },
       { spoken: 'ponto', replace: '. ', enabled: true },
       { spoken: 'ponto de interrogação', replace: '? ', enabled: true },
+      { spoken: 'ponto de interrogacao', replace: '? ', enabled: true },
       { spoken: 'interrogação', replace: '? ', enabled: true },
+      { spoken: 'interrogacao', replace: '? ', enabled: true },
       { spoken: 'ponto de exclamação', replace: '! ', enabled: true },
+      { spoken: 'ponto de exclamacao', replace: '! ', enabled: true },
       { spoken: 'exclamação', replace: '! ', enabled: true },
+      { spoken: 'exclamacao', replace: '! ', enabled: true },
       { spoken: 'dois pontos', replace: ': ', enabled: true },
       { spoken: 'ponto e vírgula', replace: '; ', enabled: true },
+      { spoken: 'ponto e virgula', replace: '; ', enabled: true },
       { spoken: 'reticências', replace: '... ', enabled: true },
-      { spoken: 'nova linha', replace: '\n', enabled: true },
-      { spoken: 'pular linha', replace: '\n', enabled: true },
-      { spoken: 'novo parágrafo', replace: '\n\n', enabled: true },
+      { spoken: 'reticencias', replace: '... ', enabled: true },
       { spoken: 'abrir aspas', replace: '"', enabled: true },
       { spoken: 'fechar aspas', replace: '"', enabled: true },
       { spoken: 'traço', replace: ' - ', enabled: true },
+      { spoken: 'traco', replace: ' - ', enabled: true },
       { spoken: 'abrir parênteses', replace: ' (', enabled: true },
+      { spoken: 'abrir parenteses', replace: ' (', enabled: true },
       { spoken: 'fechar parênteses', replace: ') ', enabled: true },
+      { spoken: 'fechar parenteses', replace: ') ', enabled: true },
 
       // Dynamic Templates (Estilo Text Blaze para Voz)
       { spoken: 'inserir data', replace: '{data}', enabled: true },
       { spoken: 'data de hoje', replace: '{data}', enabled: true },
       { spoken: 'inserir hora', replace: '{hora}', enabled: true },
       { spoken: 'saudação formal', replace: '{saudacao}! Tudo bem?', enabled: true },
+      { spoken: 'saudacao formal', replace: '{saudacao}! Tudo bem?', enabled: true },
       { spoken: 'inserir assinatura', replace: 'Atenciosamente,\ndj\n{saudacao}! {data} às {hora}', enabled: true },
       { spoken: 'link da página', replace: '{url}', enabled: true },
+      { spoken: 'link da pagina', replace: '{url}', enabled: true },
       { spoken: 'nome do site', replace: '{site}', enabled: true }
     ],
 
@@ -377,12 +399,37 @@
     return newChunk;
   }
 
+  function makeAccentInsensitiveRegex(str) {
+    const accentMap = {
+      'a': '[aáàãâäAÁÀÃÂÄ]',
+      'e': '[eéèêëEÉÈÊË]',
+      'i': '[iíìîïIÍÌÎÏ]',
+      'o': '[oóòõôöOÓÒÕÔÖ]',
+      'u': '[uúùûüUÚÙÛÜ]',
+      'c': '[cçCÇ]'
+    };
+    let result = '';
+    const clean = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean[i].toLowerCase();
+      if (accentMap[char]) {
+        result += accentMap[char];
+      } else {
+        result += clean[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+    }
+    return result;
+  }
+
   // =========================================================================
   // 4.1 MOTOR DE TEMPLATES DINÂMICOS (ESTILO TEXT BLAZE PARA ÁUDIO)
   // =========================================================================
   function evaluateDynamicTemplate(templateStr) {
     if (!templateStr || typeof templateStr !== 'string') return templateStr;
     let text = templateStr;
+
+    // Converte sequências de escape literais \n e \t digitadas nos campos para quebras de linha reais
+    text = text.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -470,10 +517,17 @@
       .sort((a, b) => b.spoken.length - a.spoken.length);
 
     activeCommands.forEach((cmd) => {
-      const escaped = cmd.spoken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(^|\\s)${escaped}(?=\\s|$|[.,!?:;])`, 'gi');
+      const pattern = makeAccentInsensitiveRegex(cmd.spoken.trim());
+      // Verifica se o comando substitui por quebra de linha (\n ou \n\n)
+      const isNewlineCmd = (cmd.replace || '').includes('\n') || cmd.replace === '\\n' || cmd.replace === '\\n\\n';
+      const regex = new RegExp(`(^|\\s)${pattern}(?=\\s|$|[.,!?:;])`, 'gi');
+
       processed = processed.replace(regex, (match, prefix) => {
         const expanded = evaluateDynamicTemplate(cmd.replace);
+        // Em quebras de linha, descarta o espaço precedente para grudar a quebra na palavra anterior
+        if (isNewlineCmd) {
+          return expanded;
+        }
         return prefix + expanded;
       });
     });
@@ -481,7 +535,12 @@
     // Também processa quaisquer tags dinâmicas que tenham sido ditas diretamente
     processed = evaluateDynamicTemplate(processed);
 
+    // Remove espaços antes de sinais de pontuação
     processed = processed.replace(/\s+([.,!?:;])/g, '$1');
+
+    // Remove espaços supérfluos grudados em quebras de linha
+    processed = processed.replace(/[ \t]*\n[ \t]*/g, '\n');
+
     return processed;
   }
 
@@ -698,21 +757,68 @@
 
       const range = sel.getRangeAt(0);
       range.deleteContents();
-      const textNode = document.createTextNode(cleanText);
-      range.insertNode(textNode);
 
-      // Posiciona o seletor de texto exatamente onde o cursor deve ficar
-      const caretIndex = (typeof targetCaretOffset === 'number' && targetCaretOffset >= 0)
-        ? Math.min(targetCaretOffset, cleanText.length)
-        : cleanText.length;
+      if (cleanText.includes('\n')) {
+        const frag = document.createDocumentFragment();
+        const lines = cleanText.split('\n');
+        let caretTargetNode = null;
+        let caretTargetOffsetInNode = 0;
+        let charCounter = 0;
 
-      const newRange = document.createRange();
-      try {
-        newRange.setStart(textNode, caretIndex);
-        newRange.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(newRange);
-      } catch (err) {}
+        lines.forEach((line, index) => {
+          if (index > 0) {
+            frag.appendChild(document.createElement('br'));
+            charCounter += 1;
+          }
+          if (line) {
+            const tNode = document.createTextNode(line);
+            frag.appendChild(tNode);
+            if (targetCaretOffset !== null && !caretTargetNode) {
+              if (targetCaretOffset <= charCounter + line.length) {
+                caretTargetNode = tNode;
+                caretTargetOffsetInNode = Math.max(0, targetCaretOffset - charCounter);
+              }
+            }
+            charCounter += line.length;
+          }
+        });
+
+        if (!caretTargetNode) {
+          const lastChild = frag.lastChild;
+          if (lastChild && lastChild.nodeType === Node.TEXT_NODE) {
+            caretTargetNode = lastChild;
+            caretTargetOffsetInNode = lastChild.length;
+          }
+        }
+
+        range.insertNode(frag);
+
+        if (caretTargetNode) {
+          const newRange = document.createRange();
+          try {
+            newRange.setStart(caretTargetNode, caretTargetOffsetInNode);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+          } catch (e) {}
+        }
+      } else {
+        const textNode = document.createTextNode(cleanText);
+        range.insertNode(textNode);
+
+        // Posiciona o seletor de texto exatamente onde o cursor deve ficar
+        const caretIndex = (typeof targetCaretOffset === 'number' && targetCaretOffset >= 0)
+          ? Math.min(targetCaretOffset, cleanText.length)
+          : cleanText.length;
+
+        const newRange = document.createRange();
+        try {
+          newRange.setStart(textNode, caretIndex);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+        } catch (err) {}
+      }
 
       target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: cleanText }));
     } else {
@@ -1898,7 +2004,36 @@
         50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); border-color: #10b981; }
         100% { box-shadow: none; border-color: rgba(255, 255, 255, 0.06); }
       }
-      .highlight-pulse { animation: sttHighlightPulse 1.6s ease-out; }
+      .stt-guide-card {
+        background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 8px; padding: 10px 14px; font-size: 12px;
+      }
+      .stt-guide-title { font-weight: 600; color: #38bdf8; margin-bottom: 6px; font-size: 12px; }
+      .stt-guide-body { color: #cbd5e1; line-height: 1.5; font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+      .stt-guide-body code { background: #0f172a; padding: 1px 5px; border-radius: 4px; color: #a5b4fc; font-family: monospace; font-size: 11px; }
+
+      .stt-preset-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      .stt-preset-btn {
+        background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); color: #6ee7b7;
+        font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+      }
+      .stt-preset-btn:hover { background: rgba(16, 185, 129, 0.25); color: #ffffff; border-color: #10b981; transform: translateY(-1px); }
+
+      .stt-cmd-header-row {
+        display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+        font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.5px;
+        background: rgba(15, 23, 42, 0.4); border-radius: 6px;
+      }
+      .stt-th-status { width: 88px; }
+      .stt-th-spoken { flex: 1.2; }
+      .stt-th-arrow { width: 14px; text-align: center; }
+      .stt-th-replace { flex: 1; }
+      .stt-th-del { width: 24px; text-align: center; }
+
+      .stt-dict-test-box {
+        margin-top: 6px; padding: 10px; background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;
+      }
 
       .stt-modal-footer {
         padding: 14px 20px; border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -2337,8 +2472,8 @@
       { spoken: 'dois pontos', replace: ': ' },
       { spoken: 'ponto e vírgula', replace: '; ' },
       { spoken: 'reticências', replace: '... ' },
-      { spoken: 'pular linha', replace: '\\n' },
-      { spoken: 'novo parágrafo', replace: '\\n\\n' },
+      { spoken: 'pular linha', replace: '\n' },
+      { spoken: 'novo parágrafo', replace: '\n\n' },
       { spoken: 'abrir aspas', replace: '"' },
       { spoken: 'traço', replace: ' - ' },
       { spoken: 'abrir parênteses', replace: ' (' }
@@ -2348,7 +2483,8 @@
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'stt-chip-btn';
-      chip.textContent = `${qp.spoken} (${qp.replace})`;
+      const labelText = qp.replace === '\n' ? '\\n (Linha)' : (qp.replace === '\n\n' ? '\\n\\n (Parágrafo)' : qp.replace);
+      chip.textContent = `${qp.spoken} (${labelText})`;
       chip.addEventListener('click', () => {
         addOrActivatePunctuation(qp.spoken, qp.replace);
       });
@@ -2367,6 +2503,9 @@
     templatesRow.appendChild(templatesLabel);
 
     const defaultDynamicTemplates = [
+      { label: '🎯 {cursor}', tag: '{cursor}' },
+      { label: '↵ Quebra (\\n)', tag: '\\n' },
+      { label: '↵↵ Parágrafo (\\n\\n)', tag: '\\n\\n' },
       { label: '👋 {saudacao}', tag: '{saudacao}' },
       { label: '📅 {data}', tag: '{data}' },
       { label: '⏰ {hora}', tag: '{hora}' },
@@ -2377,8 +2516,7 @@
       { label: '🔗 {url}', tag: '{url}' },
       { label: '🏷️ {titulo}', tag: '{titulo}' },
       { label: '🧮 {calc: 10*5}', tag: '{calc: 10*5}' },
-      { label: '🎲 {random: Sim | Não}', tag: '{random: Sim | Não}' },
-      { label: '🎯 {cursor}', tag: '{cursor}' }
+      { label: '🎲 {random: A | B}', tag: '{random: Opção A | Opção B}' }
     ];
 
     defaultDynamicTemplates.forEach((dt) => {
@@ -2394,6 +2532,66 @@
     });
     paneDict.appendChild(templatesRow);
 
+    // Card Explicativo de Como Configurar Templates
+    const guideCard = document.createElement('div');
+    guideCard.className = 'stt-guide-card';
+    guideCard.innerHTML = `
+      <div class="stt-guide-title">⚡ Como Configurar Templates & Comandos de Voz:</div>
+      <div class="stt-guide-body">
+        <div>• <b>Comando de Voz:</b> Digite no campo da esquerda o que você vai falar (ex: <i>palavra trabalhando</i> ou <i>pular linha</i>).</div>
+        <div>• <b>Texto / Template:</b> Digite no campo da direita o que será escrito automaticamente.</div>
+        <div>• <b>🎯 {cursor}:</b> Posiciona o cursor de texto exatamente onde a tag for inserida (ex: <code>Olá "{cursor}" estamos trabalhando nisso!</code>).</div>
+        <div>• <b>↵ \\n e ↵↵ \\n\\n:</b> Cria quebras de linha e novos parágrafos em qualquer campo de texto ou editor rico.</div>
+        <div>• <b>Tags Dinâmicas:</b> Clique nos chips acima para inserir <code>{data}</code>, <code>{hora}</code>, <code>{saudacao}</code>, <code>{site}</code>, <code>{url}</code>.</div>
+      </div>
+    `;
+    paneDict.appendChild(guideCard);
+
+    // Botões de Presets Rápidos
+    const presetRow = document.createElement('div');
+    presetRow.className = 'stt-preset-row';
+    const presetLabel = document.createElement('span');
+    presetLabel.className = 'stt-chips-label';
+    presetLabel.textContent = 'Criar Rápido:';
+    presetRow.appendChild(presetLabel);
+
+    const presets = [
+      { label: '+ Template com {cursor}', spoken: 'meu template', replace: 'Olá "{cursor}" estamos trabalhando nisso!' },
+      { label: '+ Assinatura Multilinha', spoken: 'minha assinatura', replace: 'Atenciosamente,\ndj\n{saudacao}! {data}' },
+      { label: '+ Quebra de Linha', spoken: 'pular linha', replace: '\n' },
+      { label: '+ Novo Parágrafo', spoken: 'novo parágrafo', replace: '\n\n' }
+    ];
+
+    presets.forEach((p) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'stt-preset-btn';
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => {
+        const newRow = renderCommandRow({ spoken: p.spoken, replace: p.replace, enabled: true }, true);
+        newRow.classList.add('highlight-pulse');
+        const spokenInp = newRow.querySelector('.stt-cmd-spoken');
+        if (spokenInp) spokenInp.focus();
+        newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        updateCommandsCount();
+        flashFeedback('✓ Novo template adicionado! Você pode alterar o comando e o texto agora.', false);
+      });
+      presetRow.appendChild(btn);
+    });
+    paneDict.appendChild(presetRow);
+
+    // Cabeçalho das Colunas da Tabela
+    const listHeader = document.createElement('div');
+    listHeader.className = 'stt-cmd-header-row';
+    listHeader.innerHTML = `
+      <span class="stt-th-status">STATUS</span>
+      <span class="stt-th-spoken">O QUE VOCÊ FALA (COMANDO)</span>
+      <span class="stt-th-arrow">➔</span>
+      <span class="stt-th-replace">O QUE É ESCRITO (TEXTO / TEMPLATE)</span>
+      <span class="stt-th-del">AÇÃO</span>
+    `;
+    paneDict.appendChild(listHeader);
+
     // Contador de comandos
     const cmdCounterBox = document.createElement('div');
     cmdCounterBox.className = 'stt-cmd-counter';
@@ -2405,6 +2603,20 @@
     cmdList.className = 'stt-commands-list';
     cmdList.id = 'stt-commands-container';
     paneDict.appendChild(cmdList);
+
+    // Teste Rápido no Dicionário
+    const dictTestBox = document.createElement('div');
+    dictTestBox.className = 'stt-dict-test-box';
+    dictTestBox.innerHTML = `
+      <div style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 6px;">🧪 Teste Rápido de Comandos & Templates:</div>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <input type="text" id="stt-dict-test-input" placeholder="Clique aqui e fale qualquer comando ou teste com os botões ao lado..." style="flex: 1; min-width: 200px; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none;">
+        <button type="button" class="stt-chip-btn" id="stt-btn-test-pular" style="color: #34d399;">Testar "pular linha"</button>
+        <button type="button" class="stt-chip-btn" id="stt-btn-test-parag" style="color: #34d399;">Testar "novo parágrafo"</button>
+        <button type="button" class="stt-chip-btn" id="stt-btn-test-cursor" style="color: #fda4af;">Testar "{cursor}"</button>
+      </div>
+    `;
+    paneDict.appendChild(dictTestBox);
 
     body.appendChild(paneDict);
 
@@ -2586,6 +2798,34 @@
       parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
       hudElements.cfgShortcut.value = parts.join('+');
     });
+
+    // Eventos dos Botões de Teste Rápido no Dicionário
+    const testInp = shadow.querySelector('#stt-dict-test-input');
+    const btnTestPular = shadow.querySelector('#stt-btn-test-pular');
+    const btnTestParag = shadow.querySelector('#stt-btn-test-parag');
+    const btnTestCursor = shadow.querySelector('#stt-btn-test-cursor');
+
+    if (btnTestPular && testInp) {
+      btnTestPular.addEventListener('click', () => {
+        testInp.focus();
+        state.targetElement = testInp;
+        handleTranscribedChunk('pular linha');
+      });
+    }
+    if (btnTestParag && testInp) {
+      btnTestParag.addEventListener('click', () => {
+        testInp.focus();
+        state.targetElement = testInp;
+        handleTranscribedChunk('novo parágrafo');
+      });
+    }
+    if (btnTestCursor && testInp) {
+      btnTestCursor.addEventListener('click', () => {
+        testInp.focus();
+        state.targetElement = testInp;
+        handleTranscribedChunk('palavra trabalhando');
+      });
+    }
 
     makeDraggable(bar);
   }
@@ -2826,7 +3066,9 @@
     inpReplace.type = 'text';
     inpReplace.className = 'stt-cmd-replace';
     inpReplace.placeholder = 'Substituir por';
-    inpReplace.value = cmd.replace === '\n' ? '\\n' : (cmd.replace === '\n\n' ? '\\n\\n' : (cmd.replace || ''));
+    let displayReplace = cmd.replace || '';
+    displayReplace = displayReplace.replace(/\n/g, '\\n').replace(/\t/g, '\\t');
+    inpReplace.value = displayReplace;
     inpReplace.addEventListener('focus', (e) => { state.lastFocusedCmdInput = e.target; });
 
     const btnDel = document.createElement('button');
@@ -3011,9 +3253,7 @@
       const enabled = r.querySelector('.stt-cmd-enabled').checked;
       const spoken = r.querySelector('.stt-cmd-spoken').value.trim();
       let replace = r.querySelector('.stt-cmd-replace').value;
-
-      if (replace === '\\n') replace = '\n';
-      if (replace === '\\n\\n') replace = '\n\n';
+      replace = replace.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 
       if (spoken) {
         newCommands.push({ enabled, spoken, replace });
@@ -3094,5 +3334,5 @@
     resetConfig: () => resetToDefaults()
   };
 
-  console.log(`[Echo] Ghost Studio v2.4.0 ativo. Modo: ${state.config.outputMode}`);
+  console.log(`[Echo] Ghost Studio v2.4.1 ativo. Modo: ${state.config.outputMode}`);
 })();
