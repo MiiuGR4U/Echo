@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Echo - Live Speech to Text (Auto Updater & Live Loader)
 // @namespace    https://github.com/MiiuGR4U/Echo
-// @version      2.3.0
+// @version      2.4.0
 // @description  Mantém o Echo (Ghost Studio - Speech to Text) atualizado automaticamente direto do GitHub sem precisar reinstalar nada no Tampermonkey.
 // @author       MiiuGR4U
 // @match        *://*/*
@@ -26,7 +26,7 @@
   const CACHE_KEY = 'ECHO_STT_CACHED_PAYLOAD';
   const CACHE_TIME_KEY = 'ECHO_STT_LAST_CHECK';
 
-  console.log('[Echo Live Loader] Iniciando auto-updater v2.3.0...');
+  console.log('[Echo Live Loader] Iniciando auto-updater v2.4.0...');
 
   function extractVersion(code) {
     if (!code || typeof code !== 'string') return '0.0';
